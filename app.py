@@ -2,6 +2,10 @@ from flask import Flask, request, jsonify
 from ultralytics import YOLO
 import os
 import datetime
+import traceback
+import io
+import numpy as np
+import cv2
 
 app = Flask(__name__)
 
@@ -26,15 +30,23 @@ def upload():
     if not img_bytes:
         return jsonify({"status": "error", "message": "No image data"}), 400
 
-    # Create a filename with timestamp
+    # Validate image bytes before saving (avoid passing invalid files to model)
+    try:
+        nparr = np.frombuffer(img_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is None:
+            print(f"[WARNING] Image Read Error {os.path.join(UPLOAD_FOLDER)}")
+            return jsonify({"status": "error", "message": "Invalid image data"}), 400
+    except Exception as e:
+        print("[WARNING] Failed to decode image:", e)
+        return jsonify({"status": "error", "message": "Invalid image data"}), 400
+
+    # Create a filename with timestamp and save
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"image_{ts}.jpg"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-
-    # Save image to disk
     with open(filepath, "wb") as f:
         f.write(img_bytes)
-
     print(f"[INFO] Saved: {filepath}, size = {len(img_bytes)} bytes")
 
     # ------------- Run YOLO inference -------------
@@ -60,10 +72,13 @@ def upload():
         print(f"[INFO] Prediction: {result_label} ({confidence_str})")
 
     except Exception as e:
-        print("[ERROR] Inference failed:", e)
+        tb = traceback.format_exc()
+        print("[ERROR] Inference failed:")
+        print(tb)
         return jsonify({
             "status": "error",
-            "message": "Model inference failed"
+            "message": "Model inference failed",
+            "error": str(e)
         }), 500
 
     # ------------- Send result back to ESP32 -------------
@@ -78,3 +93,19 @@ def upload():
 if __name__ == "__main__":
     # Run on all interfaces so ESP32 can reach it over LAN
     app.run(host="0.0.0.0", port=5000, debug=True)
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    try:
+        loaded = model is not None
+        names = getattr(model, "names", None)
+        return jsonify({
+            "status": "ok" if loaded else "error",
+            "model_loaded": bool(loaded),
+            "classes": len(names) if names is not None else None
+        }), 200
+    except Exception as e:
+        tb = traceback.format_exc()
+        print("[ERROR] Health check failed:\n", tb)
+        return jsonify({"status": "error", "message": str(e)}), 500
