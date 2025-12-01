@@ -30,24 +30,18 @@ def upload():
     if not img_bytes:
         return jsonify({"status": "error", "message": "No image data"}), 400
 
-    # Validate image bytes before saving (avoid passing invalid files to model)
-    try:
-        nparr = np.frombuffer(img_bytes, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        if img is None:
-            print(f"[WARNING] Image Read Error {os.path.join(UPLOAD_FOLDER)}")
-            return jsonify({"status": "error", "message": "Invalid image data"}), 400
-    except Exception as e:
-        print("[WARNING] Failed to decode image:", e)
-        return jsonify({"status": "error", "message": "Invalid image data"}), 400
-
     # Create a filename with timestamp and save
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"image_{ts}.jpg"
     filepath = os.path.join(UPLOAD_FOLDER, filename)
-    with open(filepath, "wb") as f:
-        f.write(img_bytes)
-    print(f"[INFO] Saved: {filepath}, size = {len(img_bytes)} bytes")
+    
+    try:
+        with open(filepath, "wb") as f:
+            f.write(img_bytes)
+        print(f"[INFO] Saved: {filepath}, size = {len(img_bytes)} bytes")
+    except Exception as e:
+        print(f"[ERROR] Failed to save image: {e}")
+        return jsonify({"status": "error", "message": "Failed to save image"}), 500
 
     # ------------- Run YOLO inference -------------
     try:
