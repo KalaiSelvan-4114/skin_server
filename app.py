@@ -16,10 +16,28 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 # ------------- Load YOLO model once at startup -------------
 # Put your trained weights file (from Colab) in same folder as this script
 # e.g. "skin.pt" or "best.pt"
-MODEL_PATH = "skin_model.pt"    # change if your file name is different
-print(f"[INFO] Loading model from {MODEL_PATH} ...")
-model = YOLO(MODEL_PATH)
-print("[INFO] Model loaded ✅")
+MODEL_PATH = os.environ.get("MODEL_PATH", "skin_model.pt")    # change via env if needed
+MODEL_DEVICE = os.environ.get("MODEL_DEVICE", "cpu")  # 'cpu' or 'cuda'
+
+print(f"[INFO] Loading model from {MODEL_PATH} on device {MODEL_DEVICE} ...")
+try:
+    model = YOLO(MODEL_PATH, device=MODEL_DEVICE)
+    print("[INFO] Model loaded ✅")
+except Exception as e:
+    tb = traceback.format_exc()
+    print("[ERROR] Failed to load model:")
+    print(tb)
+    # Try fallback to a small official model to keep service alive
+    try:
+        fallback = "yolov8n.pt"
+        print(f"[INFO] Attempting to load fallback model {fallback} on cpu...")
+        model = YOLO(fallback, device='cpu')
+        print("[INFO] Fallback model loaded ✅ (cpu)")
+    except Exception as e2:
+        tb2 = traceback.format_exc()
+        print("[CRITICAL] Fallback model load failed:")
+        print(tb2)
+        raise
 
 
 @app.route("/upload", methods=["POST"])
